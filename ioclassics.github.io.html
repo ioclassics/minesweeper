@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Classic Minesweeper • Web Game</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+:root {
+  --bg: #f4f6f8;
+  --panel: #ffffff;
+  --text: #222;
+  --tile: #e0e4ea;
+  --tile-hover: #d5dae1;
+  --revealed: #f9fafb;
+  --border: #cfd6df;
+  --accent: #4f46e5;
+}
+
+body.dark {
+  --bg: #0f172a;
+  --panel: #1e293b;
+  --text: #e5e7eb;
+  --tile: #334155;
+  --tile-hover: #475569;
+  --revealed: #1e293b;
+  --border: #475569;
+  --accent: #818cf8;
+}
+
+* {
+  box-sizing: border-box;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+}
+
+#game {
+  background: var(--panel);
+  padding: 16px;
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0,0,0,.15);
+}
+
+.hud {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.counter {
+  font-family: "Courier New", monospace;
+  font-size: 1.2rem;
+  background: #000;
+  color: #ff4d4d;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.theme-toggle {
+  cursor: pointer;
+  font-size: 1.2rem;
+}
+
+#board {
+  display: grid;
+  gap: 2px;
+  user-select: none;
+}
+
+.tile {
+  width: 32px;
+  height: 32px;
+  background: var(--tile);
+  border-radius: 6px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  font-weight: bold;
+  transition: transform .15s, background .15s;
+}
+
+.tile:hover {
+  background: var(--tile-hover);
+}
+
+.tile.revealed {
+  background: var(--revealed);
+  cursor: default;
+  transform: scale(0.95);
+}
+
+.tile.flagged::after { content: "🚩"; }
+.tile.mine::after { content: "💣"; }
+
+.n1 { color: #2563eb; }
+.n2 { color: #16a34a; }
+.n3 { color: #dc2626; }
+.n4 { color: #4f46e5; }
+.n5 { color: #7c2d12; }
+.n6 { color: #0891b2; }
+.n7 { color: #000; }
+.n8 { color: #6b7280; }
+
+@keyframes shake {
+  0% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  50% { transform: translateX(4px); }
+  75% { transform: translateX(-4px); }
+  100% { transform: translateX(0); }
+}
+
+.shake { animation: shake .4s; }
+
+#menu {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.menu-box {
+  background: var(--panel);
+  padding: 24px;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.menu-box button {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px;
+  font-size: 1rem;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+}
+
+/* END GAME MODAL */
+.end-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(6px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  opacity: 1;
+  transition: opacity .3s ease;
+}
+
+.end-modal.hidden {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.end-card {
+  background: var(--panel);
+  padding: 28px 32px;
+  border-radius: 16px;
+  text-align: center;
+  box-shadow: 0 25px 50px rgba(0,0,0,0.25);
+}
+
+.end-card button {
+  padding: 10px 22px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: white;
+  font-size: 1rem;
+  cursor: pointer;
+}
+</style>
+</head>
+
+<body>
+
+<div id="menu">
+  <div class="menu-box">
+    <h2>Minesweeper</h2>
+    <button onclick="startGame(9,9,10)">Beginner</button>
+    <button onclick="startGame(16,16,40)">Intermediate</button>
+    <button onclick="startGame(30,16,99)">Expert</button>
+  </div>
+</div>
+
+<div id="game" hidden>
+  <div class="hud">
+    <div class="counter" id="mineCounter">000</div>
+    <div class="theme-toggle" onclick="toggleTheme()">🌙</div>
+    <div class="counter" id="timer">000</div>
+  </div>
+  <div id="board"></div>
+</div>
+
+<div id="endModal" class="end-modal hidden">
+  <div class="end-card">
+    <h2 id="endTitle"></h2>
+    <p id="endMessage"></p>
+    <button onclick="resetGame()">Play Again</button>
+  </div>
+</div>
+
+<script>
+let rows, cols, mines;
+let board = [];
+let revealed = 0;
+let flags = 0;
+let firstClick = true;
+let timerInterval;
+let time = 0;
+let gameOver = false;
+
+function startGame(c, r, m) {
+  cols = c; rows = r; mines = m;
+  document.getElementById("menu").style.display = "none";
+  document.getElementById("game").hidden = false;
+  initBoard();
+}
+
+function initBoard() {
+  board = [];
+  revealed = 0;
+  flags = 0;
+  firstClick = true;
+  gameOver = false;
+  time = 0;
+  clearInterval(timerInterval);
+  updateHUD();
+
+  const boardEl = document.getElementById("board");
+  boardEl.classList.remove("shake");
+  boardEl.style.gridTemplateColumns = `repeat(${cols}, 32px)`;
+  boardEl.innerHTML = "";
+
+  for (let i = 0; i < rows * cols; i++) {
+    board.push({ mine:false, revealed:false, flagged:false, count:0 });
+    const tile = document.createElement("div");
+    tile.className = "tile";
+    tile.oncontextmenu = e => { e.preventDefault(); flagTile(i); };
+    tile.onclick = () => revealTile(i);
+    tile.ondblclick = () => chord(i);
+    boardEl.appendChild(tile);
+  }
+}
+
+function placeMines(exclude) {
+  let placed = 0;
+  while (placed < mines) {
+    const i = Math.floor(Math.random() * board.length);
+    if (i === exclude || board[i].mine) continue;
+    board[i].mine = true;
+    placed++;
+  }
+  board.forEach((c,i)=>{
+    if(!c.mine) c.count = getNeighbors(i).filter(n=>board[n].mine).length;
+  });
+}
+
+function revealTile(i) {
+  if (gameOver) return;
+  const cell = board[i];
+  const tile = document.getElementsByClassName("tile")[i];
+  if (cell.revealed || cell.flagged) return;
+
+  if (firstClick) {
+    placeMines(i);
+    timerInterval = setInterval(() => {
+      time++;
+      document.getElementById("timer").textContent = time.toString().padStart(3,"0");
+    }, 1000);
+    firstClick = false;
+  }
+
+  cell.revealed = true;
+  tile.classList.add("revealed");
+
+  if (cell.mine) {
+    tile.classList.add("mine");
+    endGame(false);
+    return;
+  }
+
+  revealed++;
+  if (cell.count) {
+    tile.textContent = cell.count;
+    tile.classList.add("n"+cell.count);
+  } else getNeighbors(i).forEach(revealTile);
+
+  if (revealed === rows*cols - mines) endGame(true);
+}
+
+function flagTile(i) {
+  if (gameOver) return;
+  const cell = board[i];
+  const tile = document.getElementsByClassName("tile")[i];
+  if (cell.revealed) return;
+  cell.flagged = !cell.flagged;
+  tile.classList.toggle("flagged");
+  flags += cell.flagged ? 1 : -1;
+  updateHUD();
+}
+
+function chord(i) {
+  if (gameOver) return;
+  const cell = board[i];
+  if (!cell.revealed || !cell.count) return;
+  const n = getNeighbors(i);
+  if (n.filter(x=>board[x].flagged).length === cell.count)
+    n.forEach(x=>!board[x].flagged && revealTile(x));
+}
+
+function getNeighbors(i) {
+  const x=i%cols,y=Math.floor(i/cols),n=[];
+  for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+    if(!dx&&!dy)continue;
+    const nx=x+dx,ny=y+dy;
+    if(nx>=0&&ny>=0&&nx<cols&&ny<rows)n.push(ny*cols+nx);
+  }
+  return n;
+}
+
+function updateHUD() {
+  document.getElementById("mineCounter").textContent =
+    (mines - flags).toString().padStart(3,"0");
+}
+
+function endGame(win) {
+  if (gameOver) return;
+  gameOver = true;
+  clearInterval(timerInterval);
+
+  document.querySelectorAll(".tile").forEach((t,i)=>{
+    if(board[i].mine) t.classList.add("mine");
+  });
+
+  if(!win) document.getElementById("board").classList.add("shake");
+
+  document.getElementById("endTitle").textContent = win ? "You Win 🎉" : "Game Over 💥";
+  document.getElementById("endMessage").textContent =
+    win ? `Completed in ${time} seconds` : "You clicked on a mine";
+
+  document.getElementById("endModal").classList.remove("hidden");
+}
+
+function resetGame() {
+  document.getElementById("endModal").classList.add("hidden");
+  document.getElementById("game").hidden = true;
+  document.getElementById("menu").style.display = "flex";
+}
+
+function toggleTheme() {
+  document.body.classList.toggle("dark");
+}
+</script>
+
+</body>
+</html>
